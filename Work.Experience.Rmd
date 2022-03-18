@@ -1,0 +1,284 @@
+
+Install the data set before running the code.
+
+Converting all the necessary variables into numeric so can be used in the linear model.
+```{r}
+data
+
+data$SPEND_M1_GROCERY<- as.numeric(data$SPEND_M1_GROCERY)
+data$SPEND_M1_OTHER<-as.numeric(data$SPEND_M1_OTHER)
+data$SPEND_M1_TRAVEL<- as.numeric(data$SPEND_M1_TRAVEL)
+
+data$SPEND_M2_GROCERY<- as.numeric(data$SPEND_M2_GROCERY)
+data$SPEND_M2_OTHER<-as.numeric(data$SPEND_M2_OTHER)
+data$SPEND_M2_TRAVEL<- as.numeric(data$SPEND_M2_TRAVEL)
+
+```
+
+
+```{r}
+data
+attach(data)
+```
+Making two new variables which sum the first and second months spending respectively, to make it easier to remove individuals with no spending.
+```{r}
+for (i in 1:nrow(data)) {
+  
+  data$SPEND_M1_TOTAL[i]<- SPEND_M1_GROCERY[i]+ SPEND_M1_OTHER[i]+ SPEND_M1_TRAVEL[i]
+  
+  data$SPEND_M2_TOTAL[i]<- SPEND_M2_GROCERY[i]+ SPEND_M2_OTHER[i]+ SPEND_M2_TRAVEL[i]
+}
+
+data
+```
+
+Converting factor variables using one hot coding so can be used in the linear model.
+```{r}
+library(mltools)
+library(data.table)
+
+
+data$REGION<- as.factor(data$REGION)
+data$OCCUPATION<- as.factor(data$OCCUPATION)
+data$CARD_COLOUR<- as.factor(data$CARD_COLOUR)
+data
+
+str(data$REGION)
+
+newdata<- one_hot(as.data.table(data))
+newdata
+
+```
+
+
+Removed individuals that have spent nothing to prevent skew.
+```{r}
+
+newdata1<- subset(newdata, SPEND_M1_TOTAL!=0& SPEND_M2_TOTAL!=0,)
+newdata1
+
+```
+
+Removing any NA values from the new data set.
+
+
+```{r}
+newdata1$AGE<- as.integer(newdata1$AGE)
+str(newdata1)
+newdata1
+
+newdata2<-na.omit(newdata1)
+
+
+
+
+```
+
+
+
+
+Splitting into test and train data to test accuracy of our model.
+
+```{r}
+
+set.seed(101)
+n = nrow(newdata2)
+trainIndex = sample(1:n, size = round(0.7*n), replace=FALSE)
+train = newdata2[trainIndex ,]
+test = newdata2[-trainIndex ,]
+
+
+```
+
+Making our first model with all the variables in to see which are important
+
+```{r}
+Mfull<- lm(train$SPEND_M3_TOTAL~., data=train)
+summary(Mfull)
+```
+Removing all insignificant variables based on the p value
+
+
+We want the value of the median to be as close to zero as possible as it implies that the model is not skewed in either direction. However it is dependent on the data set when judging what value is considered far away from zero, in this case, -0.67 is very close to zero. In addition to this, it is important that the remaining residuals are as symmetric as possible. The min and the max have a similar magnitude which shows that the model isnt heavily influenced by the outliers, suggesting it has a good fit.
+
+The coefficient represents how much the dependent variable will be affected after 1 unit of change in that covariate. The larger the magnitude of the number, the more correlated it is to the dependent variable.
+
+The standard error is the average amount the variable varies from the actual value
+
+t-value- estimate/sd error 
+
+The total of month 1 and month 2 is represented by other variables and therefore does not add any more information so can be removed.
+
+```{r}
+
+
+M<- lm(train$SPEND_M3_TOTAL~ train$AGE + train$OCCUPATION_Employed+ train$OCCUPATION_Retired+ train$OCCUPATION_Student+ train$MOBILE_APP_USER+ train$CARD_COLOUR_Blue+ train$CREDIT_LIMIT+ train$SPEND_M1_GROCERY+ train$SPEND_M1_OTHER+ train$SPEND_M1_TRAVEL+ train$SPEND_M2_GROCERY+train$SPEND_M2_OTHER+ train$SPEND_M2_TRAVEL, data = train)
+
+summary(M)
+
+```
+
+Looking at the correlation of some of the covariates and the dependent variable
+
+```{r}
+cor(newdata2$CREDIT_LIMIT, newdata2$SPEND_M3_TOTAL)
+cor(newdata2$AGE, newdata2$SPEND_M3_TOTAL)
+cor(newdata2$PARENT, newdata2$SPEND_M3_TOTAL)
+cor(newdata2$MOBILE_APP_USER, newdata2$SPEND_M3_TOTAL)
+cor(newdata2$SPEND_M1_TOTAL, newdata2$SPEND_M3_TOTAL)
+cor(newdata2$SPEND_M2_TOTAL, newdata2$SPEND_M3_TOTAL)
+
+```
+Removing the variabeles with less than 0.1 correlation
+
+```{r}
+M1<- lm(train$SPEND_M3_TOTAL~ train$OCCUPATION_Employed+ train$OCCUPATION_Retired+ train$OCCUPATION_Student+ train$CARD_COLOUR_Blue+ train$CREDIT_LIMIT+ train$SPEND_M1_GROCERY+ train$SPEND_M1_OTHER+ train$SPEND_M1_TRAVEL+ train$SPEND_M2_GROCERY+train$SPEND_M2_OTHER+ train$SPEND_M2_TRAVEL, data = train)
+
+summary(M1)
+
+```
+This has decreased the R Squared and adjusted R squared value which is an improvement, we are finally going to remove the occupation retired as it is now not considered significant. 
+
+
+```{r}
+
+M2<- lm(train$SPEND_M3_TOTAL~ train$OCCUPATION_Employed+ train$OCCUPATION_Student+ train$CARD_COLOUR_Blue+ train$CREDIT_LIMIT+ train$SPEND_M1_GROCERY+ train$SPEND_M1_OTHER+ train$SPEND_M1_TRAVEL+ train$SPEND_M2_GROCERY+train$SPEND_M2_OTHER+ train$SPEND_M2_TRAVEL, data = train)
+
+summary(M2)
+```
+
+Removing this has increased the F value, making it even further away from 1 which suggests that there is a correlation between our covariates and dependent variable.
+
+
+We are going to compare the two models: M2 and Mfull using an ANOVA test. This estimates how a quantitive dependent variable changes according to the levels of one or more categorical independent variables. 
+
+Comparing the full model and the modified model:
+
+```{r}
+anova(M2,M1)
+anova(M,M1)
+
+anova(Mfull,M1)
+
+```
+We can see out of models: M,M1 and M2, M1 performs the best. However when compared with the full model it has  a larger 'Residual Sum of Squares' which means it doesnt improve the models fit, suggesting that the full model is the best.
+
+Now comparing the accuracy with the test data 
+
+```{r}
+predictions<- predict(Mfull, test)
+predictions
+
+mean(abs(predictions-test$SPEND_M3_TOTAL))
+
+
+
+
+```
+'Predictions' give us our month 3 guessed on how much will be spent, averaging at around £116.08
+on average our model predicts the month 3 spending within approximately £35.00.
+
+```{r}
+summary(predictions)
+
+```
+
+```{r}
+library(dplyr)
+
+top<-  arrange(test, desc(test$SPEND_M3_TOTAL))
+top
+```
+
+Here are the top 250 spenders for the third month with the summary of each of the months spending can be seen in the following.
+
+SUMMARY OF HIGH SPENDERS:
+
+219- England
+7- Northern Irland
+11- Scotland
+13-Wales
+
+141-employed
+15-retired
+8-self employed
+61-student
+25-unemployed
+
+122- parents
+
+
+```{r}
+top250<-top[1:250]
+
+summary(top250)
+```
+
+Location Summary
+```{r}
+sum(top250$REGION_England)
+sum(top250$`REGION_Northern Ireland`)
+sum(top250$REGION_Scotland)
+sum(top250$REGION_Wales)
+```
+
+219 out of the top 250 people were from england, 7 from Ireland, 11 from scotland, 13 from wales. To improve, focus on advertisment outside of england in the UK.
+
+Occupation
+
+```{r}
+sum(top250$OCCUPATION_Employed)
+sum(top250$OCCUPATION_Retired)
+sum(top250$`OCCUPATION_Self-employed`)
+sum(top250$OCCUPATION_Student)
+sum(top250$OCCUPATION_Unemployed)
+
+sum(top250$PARENT)
+
+
+```
+
+The vast majority of the large spenders are employed with 141 of the top 250 having a job. second its students, the remaining categories have less than 25 in each. Could reach out to the retired and self employed to encourage more of them to increase the spending.
+
+
+Top spenders spend the most on groceries each month averaging £139.40 in month 1 and £148 in month 2. Furthermore the average credit limit is 998, so increasing this even more may allow even more spendings on other areas each month. continuing to appeal to the employed and students will also increase the chances that they will maintain there high spendings, personal emails could be done to ensure this. 
+
+
+
+```{r}
+bottom<-  arrange(test, -desc(test$SPEND_M3_TOTAL))
+bottom250<-bottom[1:250]
+summary(bottom250)
+```
+35 people didnt spend anything in the third month. 
+```{r}
+sum(bottom250$PARENT)
+sum(bottom250$REGION_England)
+sum(bottom250$`REGION_Northern Ireland`)
+sum(bottom250$REGION_Scotland)
+sum(bottom250$REGION_Wales)
+sum(bottom250$OCCUPATION_Employed)
+sum(bottom250$OCCUPATION_Retired)
+sum(bottom250$`OCCUPATION_Self-employed`)
+sum(bottom250$OCCUPATION_Student)
+sum(bottom250$OCCUPATION_Unemployed)
+```
+SUMMARY OF LOW SPENDERS:
+23 parents
+
+211- from england (suggesting most people in sample are from england)
+6- Ireland
+21- Scotland
+12- Wales
+
+25-Employed
+49- retired
+61- Self Employed
+63- Students
+52- Unemployed
+
+Groceries are also the most popular thing to spend money on, however travel and 'other' is considerably less. Sending out deals for shops uses of travel could potentially encourage more people to spend money in these areas. Furthermore the average credit limit is 320, increasing this could increase the amount of money spent, however financial analysis on individuals should be considered before doing so to ensure the money is likely to be returned.
+
+
+
+
